@@ -92,6 +92,8 @@ flags.DEFINE_string('trained_checkpoint_prefix', None,
                     'Path to trained checkpoint, typically of the form '
                     'path/to/model.ckpt')
 flags.DEFINE_string('output_directory', None, 'Path to write outputs.')
+flags.DEFINE_boolean('serving', False,
+                     'If exporting for serving usage')
 
 tf.app.flags.mark_flag_as_required('pipeline_config_path')
 tf.app.flags.mark_flag_as_required('trained_checkpoint_prefix')
@@ -113,7 +115,7 @@ def main(_):
   # https://medium.freecodecamp.org/how-to-deploy-an-object-detection-model-with-tensorflow-serving-d6436e65d1d9
   exporter.export_inference_graph(FLAGS.input_type, pipeline_config,
                                   FLAGS.trained_checkpoint_prefix,
-                                  FLAGS.output_directory, input_shape, serving=True)
+                                  FLAGS.output_directory, input_shape, serving=FLAGS.serving)
 
 
 if __name__ == '__main__':

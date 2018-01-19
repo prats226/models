@@ -372,13 +372,15 @@ def _export_inference_graph(input_type,
                             serving=False):
   """Export helper."""
   
-  # tf.gfile.MakeDirs(output_directory)
-  # frozen_graph_path = os.path.join(output_directory,
-  #                                  'frozen_inference_graph.pb')
-  # saved_model_path = os.path.join(output_directory, 'saved_model')
-  # model_path = os.path.join(output_directory, 'model.ckpt')
-
-  saved_model_path = output_directory
+  if not serving:
+    # Create directory
+    tf.gfile.MakeDirs(output_directory)
+    frozen_graph_path = os.path.join(output_directory,
+                                     'frozen_inference_graph.pb')
+    saved_model_path = os.path.join(output_directory, 'saved_model')
+    model_path = os.path.join(output_directory, 'model.ckpt')
+  else:
+    saved_model_path = output_directory
 
   if input_type not in input_placeholder_fn_map:
     raise ValueError('Unknown input type: {}'.format(input_type))
@@ -411,12 +413,6 @@ def _export_inference_graph(input_type,
   saver = tf.train.Saver()
   input_saver_def = saver.as_saver_def()
 
-  # _write_graph_and_checkpoint(
-  #     inference_graph_def=tf.get_default_graph().as_graph_def(),
-  #     model_path=model_path,
-  #     input_saver_def=input_saver_def,
-  #     trained_checkpoint_prefix=checkpoint_to_use)
-
   if additional_output_tensor_names is not None:
     output_node_names = ','.join(outputs.keys()+additional_output_tensor_names)
   else:
@@ -432,12 +428,17 @@ def _export_inference_graph(input_type,
       clear_devices=True,
       optimize_graph=optimize_graph,
       initializer_nodes='')
-    # _write_frozen_graph(frozen_graph_path, frozen_graph_def)
 
   if serving:
     _write_saved_model_serving(saved_model_path, trained_checkpoint_prefix,
                      placeholder_tensor, outputs)
   else:
+    _write_graph_and_checkpoint(
+      inference_graph_def=tf.get_default_graph().as_graph_def(),
+      model_path=model_path,
+      input_saver_def=input_saver_def,
+      trained_checkpoint_prefix=checkpoint_to_use)
+    _write_frozen_graph(frozen_graph_path, frozen_graph_def)
     _write_saved_model(saved_model_path, frozen_graph_def,
                      placeholder_tensor, outputs)
 
