@@ -110,9 +110,10 @@ def main(_):
     ]
   else:
     input_shape = None
+  # https://medium.freecodecamp.org/how-to-deploy-an-object-detection-model-with-tensorflow-serving-d6436e65d1d9
   exporter.export_inference_graph(FLAGS.input_type, pipeline_config,
                                   FLAGS.trained_checkpoint_prefix,
-                                  FLAGS.output_directory, input_shape)
+                                  FLAGS.output_directory, input_shape, serving=True)
 
 
 if __name__ == '__main__':

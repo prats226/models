@@ -69,7 +69,7 @@ def freeze_graph_with_def_protos(
     if optimize_graph:
       logging.info('Graph Rewriter optimizations enabled')
       rewrite_options = rewriter_config_pb2.RewriterConfig(
-          layout_optimizer=rewriter_config_pb2.RewriterConfig.ON)
+          optimize_tensor_layout=rewriter_config_pb2.RewriterConfig.ON)
       rewrite_options.optimizers.append('pruning')
       rewrite_options.optimizers.append('constfold')
       rewrite_options.optimizers.append('layout')
@@ -258,6 +258,45 @@ def _write_frozen_graph(frozen_graph_path, frozen_graph_def):
     f.write(frozen_graph_def.SerializeToString())
   logging.info('%d ops in the final graph.', len(frozen_graph_def.node))
 
+def _write_saved_model_serving(saved_model_path,
+                       trained_checkpoint_prefix,
+                       inputs,
+                       outputs):
+  """Writes SavedModel to disk.
+  Args:
+    saved_model_path: Path to write SavedModel.
+    trained_checkpoint_prefix: path to trained_checkpoint_prefix.
+    inputs: The input image tensor to use for detection.
+    outputs: A tensor dictionary containing the outputs of a DetectionModel.
+  """
+  saver = tf.train.Saver()
+  with session.Session() as sess:
+    saver.restore(sess, trained_checkpoint_prefix)
+    builder = tf.saved_model.builder.SavedModelBuilder(saved_model_path)
+
+    tensor_info_inputs = {
+          'inputs': tf.saved_model.utils.build_tensor_info(inputs)}
+    tensor_info_outputs = {}
+    for k, v in outputs.items():
+      tensor_info_outputs[k] = tf.saved_model.utils.build_tensor_info(v)
+
+    detection_signature = (
+        tf.saved_model.signature_def_utils.build_signature_def(
+              inputs=tensor_info_inputs,
+              outputs=tensor_info_outputs,
+              method_name=signature_constants.PREDICT_METHOD_NAME))
+
+    builder.add_meta_graph_and_variables(
+          sess, [tf.saved_model.tag_constants.SERVING],
+          signature_def_map={
+              'detection_signature':
+                  detection_signature,
+              signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY:
+                  detection_signature,
+          },
+      )
+    builder.save()
+
 
 def _write_saved_model(saved_model_path,
                        frozen_graph_def,
@@ -329,13 +368,17 @@ def _export_inference_graph(input_type,
                             additional_output_tensor_names=None,
                             input_shape=None,
                             optimize_graph=True,
-                            output_collection_name='inference_op'):
+                            output_collection_name='inference_op',
+                            serving=False):
   """Export helper."""
-  tf.gfile.MakeDirs(output_directory)
-  frozen_graph_path = os.path.join(output_directory,
-                                   'frozen_inference_graph.pb')
-  saved_model_path = os.path.join(output_directory, 'saved_model')
-  model_path = os.path.join(output_directory, 'model.ckpt')
+  
+  # tf.gfile.MakeDirs(output_directory)
+  # frozen_graph_path = os.path.join(output_directory,
+  #                                  'frozen_inference_graph.pb')
+  # saved_model_path = os.path.join(output_directory, 'saved_model')
+  # model_path = os.path.join(output_directory, 'model.ckpt')
+
+  saved_model_path = output_directory
 
   if input_type not in input_placeholder_fn_map:
     raise ValueError('Unknown input type: {}'.format(input_type))
@@ -368,11 +411,11 @@ def _export_inference_graph(input_type,
   saver = tf.train.Saver()
   input_saver_def = saver.as_saver_def()
 
-  _write_graph_and_checkpoint(
-      inference_graph_def=tf.get_default_graph().as_graph_def(),
-      model_path=model_path,
-      input_saver_def=input_saver_def,
-      trained_checkpoint_prefix=checkpoint_to_use)
+  # _write_graph_and_checkpoint(
+  #     inference_graph_def=tf.get_default_graph().as_graph_def(),
+  #     model_path=model_path,
+  #     input_saver_def=input_saver_def,
+  #     trained_checkpoint_prefix=checkpoint_to_use)
 
   if additional_output_tensor_names is not None:
     output_node_names = ','.join(outputs.keys()+additional_output_tensor_names)
@@ -389,8 +432,13 @@ def _export_inference_graph(input_type,
       clear_devices=True,
       optimize_graph=optimize_graph,
       initializer_nodes='')
-  _write_frozen_graph(frozen_graph_path, frozen_graph_def)
-  _write_saved_model(saved_model_path, frozen_graph_def,
+    # _write_frozen_graph(frozen_graph_path, frozen_graph_def)
+
+  if serving:
+    _write_saved_model_serving(saved_model_path, trained_checkpoint_prefix,
+                     placeholder_tensor, outputs)
+  else:
+    _write_saved_model(saved_model_path, frozen_graph_def,
                      placeholder_tensor, outputs)
 
 
@@ -401,7 +449,8 @@ def export_inference_graph(input_type,
                            input_shape=None,
                            optimize_graph=True,
                            output_collection_name='inference_op',
-                           additional_output_tensor_names=None):
+                           additional_output_tensor_names=None,
+                           serving=False):
   """Exports inference graph for the model specified in the pipeline config.
 
   Args:
@@ -424,4 +473,4 @@ def export_inference_graph(input_type,
                           pipeline_config.eval_config.use_moving_averages,
                           trained_checkpoint_prefix,
                           output_directory, additional_output_tensor_names,
-                          input_shape, optimize_graph, output_collection_name)
+                          input_shape, optimize_graph, output_collection_name, serving)
